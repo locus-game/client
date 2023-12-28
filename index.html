@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html ontouchstart="event.preventDefault()" style="overflow: hidden;" autocapitalize="off" spellcheck="false">
+	<head>
+		<meta charset="UTF-8">
+		<style>
+			#canvas {
+				position: fixed;
+				bottom: 0; left: 0;
+				width: 100% !important; height: 100% !important;
+			}
+			div {
+				position: fixed;
+				transform-origin: bottom left;
+				bottom: 0; left: 0;
+			}
+			input{
+				position: absolute;
+				padding: 0; margin: 0;
+				border: none; outline: none; -webkit-tap-highlight-color: transparent;
+				background: none; color: #0000; caret-color: white;
+				bottom: 100%;
+			}
+			input:-webkit-autofill{ opacity: 0 }
+		</style>
+		<link rel="icon" id="icon">
+	</head>
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js" integrity="sha512-g2TeAWw5GPnX7z0Kn8nFbYfeHcvAu/tx6d6mrLe/90mkCxO+RcptyYpksUz35EO337F83bZwcmUyHiHamspkfg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+	<body></body>
+	<script>
+		globalThis._ = void-0
+		// Smi Contiguous Array
+		globalThis.BitField = class BitField extends Array{
+			static parse(a){
+				if(!Array.isArray(a)) return new BitField 
+				return Object.setPrototypeOf(a, BitField.prototype)
+			}
+			static copyFrom(a){
+				const b = new BitField
+				if(Array.isArray(a))
+					b.push(...a)
+				return b
+			}
+			of(...n){
+				const b = new BitField
+				for(const i of n) b.set(i)
+				return b
+			}
+			set(pos){
+				while((pos >> 5) >= this.length) super.push(0)
+				this[pos >> 5] |= 1 << (pos & 31)
+			}
+			unset(pos){
+				let i = this.length
+				if((pos >> 5) >= i)return
+				this[pos >> 5] &= ~(1 << (pos & 31))
+				while(i && !this[--i]) super.pop()
+			}
+			toggle(pos){
+				let i = this.length
+				while((pos >> 5) >= i) super.push(0)
+				this[pos >> 5] ^= 1 << (pos & 31)
+				while(i && !this[--i]) super.pop()
+			}
+			has(pos){
+				if((pos >> 5) >= this.length)return false
+				return !!(this[pos >> 5] & (1 << (pos & 31)))
+			}
+			pop(pos){
+				if((pos >> 5) >= this.length)return false
+				let i = pos >> 5
+				const a = !!(this[i] ^ (this[i] &= ~(1 << (pos & 31))))
+				if(i === this.length - 1) while(i >= 0 && !this[i--]) super.pop()
+				return a
+			}
+			put(pos){
+				let i = pos >> 5
+				while(i >= this.length) super.push(0)
+				return !!(this[i] ^ (this[i] |= 1 << (pos & 31)))
+			}
+			xor(other){
+				let l = this.length
+				if(l === other.length){
+					while(l && this[--l] === other[l]) super.pop()
+				}else{
+					let l2 = l; l--
+					while(l2 < other.length) super.push(other[l2++])
+				}
+				for(let i = l; i >= 0; i--) this[i] ^= other[i]
+			}
+			and(other){
+				let l = this.length
+				if(this.length > other.length) l = this.length = other.length
+				while(l && !(this[--l] & other[l])) super.pop()
+				while(l > 0) this[--l] &= other[l]
+			}
+			or(other){
+				let l = this.length - 1, l2 = l
+				while(++l2 < other.length) super.push(other[l2])
+				for(let i = l; i >= 0; i--) this[i] |= other[i]
+			}
+			firstUnset(){
+				let i = -1
+				while(++i < this.length){
+					const a = ~this[i]
+					if(a) return i<<5|31-Math.clz32(a&-a)
+				}
+				return i<<5
+			}
+			firstSet(){
+				let i = -1
+				while(++i < this.length)
+					if(this[i]) return i<<5|31-Math.clz32(this[i]&-this[i])
+				return -1
+			}
+			lastSet(){
+				let i = this.length
+				while(--i >= 0)
+					if(this[i]) return i<<5|31-Math.clz32(this[i])
+				return -1
+			}
+			popFirst(){
+				let i = -1
+				while(++i < this.length)
+					if(this[i]){
+						let s = 31-Math.clz32(this[i]&-this[i])
+						this[i] &= ~(1 << s)
+						s = i<<5|s
+						i = this.length
+						while(i && !this[--i]) super.pop()
+						return s
+					}
+				return -1
+			}
+			popLast(){
+				let i = this.length
+				while(--i >= 0)
+					if(this[i]){
+						let s = 31-Math.clz32(this[i])
+						this[i] &= ~(1 << s)
+						s = i<<5|s
+						i = this.length
+						while(i && !this[--i]) super.pop()
+						return s
+					}
+				return -1
+			}
+			clear(){ this.length = 0 }
+		}
+		const uiContainer = document.createElement('div')
+		document.documentElement.append(uiContainer)
+		Math.PI2 = Math.PI * 2
+		Math.ifloat = x => {
+			let f = floor(x)
+			return (f >> 0) + (x - f)
+		}
+		Object.defineProperties(globalThis, Object.getOwnPropertyDescriptors(Math))
+		globalThis.Can = (w, h, o=false) => {
+			const c = document.createElement('canvas').getContext('2d', typeof o == 'boolean' ? {willReadFrequently: o, colorSpace: 'display-p3'} : o)
+			c.img = c.canvas; c.pattern = null
+			c.canvas.width = w; c.canvas.height = h
+			c.transforms = []
+			c.reset()
+			return c
+		}
+		const _imgmap = new Map
+		const ivBitmap = !/Version\/(1[0-4]|\d)(\.\d+)? Safari\//.test(navigator.userAgent) ? (img,sx,sy,sw,sh) => sw|sh?createImageBitmap(img, sx, sy, sw, sh, {imageOrientation: 'flipY'}):createImageBitmap(img, {imageOrientation: 'flipY'}) : img => createImageBitmap(img).then(bit => {
+			// Safari fallback
+			texCanvas.width = sw??bit.width
+			texCanvas.height = sh??bit.height
+			texCanvas.transform(1, 0, 0, -1, 0, texCanvas.height)
+			texCanvas.drawImage(bit, -sx, -sy, bit.width, bit.height)
+			return createImageBitmap(texCanvas)
+		})
+		globalThis.Tex = function(src, sx = 0, sy = 0, sw, sh){
+			let a = _imgmap.get(src)
+			if(!a) _imgmap.set(src, a = fetch(src).then(a => a.blob()))
+			const tx = {img: null, pattern: null, width: 0, height: 0, done: null}
+			tx.done = a.then(img => ivBitmap(img, sx, sy, sw || img.width, sh || img.height)).then(bit => (tx.img = bit,tx.width=bit.width,tx.height=bit.height,tx))
+			return tx
+		}
+		let _id = 0
+		globalThis.Font = src => {
+			const f = new FontFace('a'+ ++_id, 'url('+CSS.escape(src)+')')
+			document.fonts.add(f)
+			return f.load().then(f => '1000px ' + f.family)
+		}
+		let clickHandled = 0
+		const {fillText: _fillTxt, strokeText: _strokeTxt, measureText: _measureTxt, setTransform: _setTransform} = CanvasRenderingContext2D.prototype
+
+		globalThis.Input = (v='',n='off') => {const i = document.createElement('input'); i.value = v; i.autocomplete=n; i.onenter = null; return i}
+		HTMLInputElement.prototype.toString = function(){return this.value}
+		HTMLTextAreaElement.prototype.toString = function(){return this.value}
+		HTMLInputElement.prototype.format = function(fn){
+			if(this.value === this._oldValue) return
+			const value = this.value, s = this.selectionEnd
+			const vali = fn(this.value) ?? true
+			this.value = vali === true ? value : vali === false ? ov : vali
+			this._oldValue = this.value
+			if(value != this.value){
+				let j = this.value.length - 1, k = value.length - 1
+				while(this.value[j] == value[k]) j--, k--
+				this.selectionStart = this.selectionEnd = s+j-k
+			}
+			return this.value
+		}
+		const toRem = new Set
+		globalThis.DEFAULT_FONT = '1000px AnkaCoder, Consolas, Menlo, monospace'
+		Object.assign(CanvasRenderingContext2D.prototype, {_fillTxt, _strokeTxt, _measureTxt, _setTransform})
+		Object.defineProperties(CanvasRenderingContext2D.prototype, Object.getOwnPropertyDescriptors(class{
+			image({img}, x, y, w, h, ix, iy, iw, ih){ if(img) if(typeof ix != 'undefined') this.drawImage(img, x, img.height-y-h, w, h, ix, iy, iw??img.width, ih??img.height); else this.drawImage(img, x, y, w??img.width, h??img.height) }
+			resetTransform(){
+				this._setTransform(px, 0, 0, -px, 0, this.canvas.height)
+			}
+			rotate(d){
+				const s = sin(d), c = cos(d)
+				this.transform(c,-s,s,c,0,0)
+			}
+			setTransform(a,b,c,d,e,f){ this._setTransform(a,b,c,-d,e,this.canvas.height-f) }
+			resize(w, h){
+				this.canvas.width = w
+				this.canvas.height = h
+			}
+			reset(){
+				this.fillStyle = this.stokeStyle = '#000'
+				this.globalAlpha = 1
+				this.globalCompositeOperation = 'destination-over'
+				this.font = DEFAULT_FONT
+				//this.imageSmoothingEnabled = false
+				this.resetTransform()
+			}
+			push(){
+				//V8 says we can avoid allocation because the object does not escape. We extract props and add them directly to the array, avoiding the super expensive DOMMatrix object allocation. If you try and touch the following line, you better be sleeping with one eye open...
+				const {a, b, c, d, e, f} = this.getTransform()
+				return this.transforms.push(f, e, d, c, b, a)-6
+			}
+			pop(l = this.transforms.length-6){
+				this._setTransform(this.transforms[l+5], this.transforms[l+4], this.transforms[l+3], this.transforms[l+2], this.transforms[l+1], this.transforms[l])
+				this.transforms.length = l
+			}
+			peek(l = this.transforms.length-6){
+				this._setTransform(this.transforms[l+5], this.transforms[l+4], this.transforms[l+3], this.transforms[l+2], this.transforms[l+1], this.transforms[l])
+			}
+			scissor(x0, y0, w, h){
+				this.beginPath()
+				this.rect(x0, y0, w, h)
+				this.closePath()
+				this.clip()
+			}
+			coverBox(){
+				const {a, b, c, d, e, f} = this.getTransform()
+				const det = a * d - b * c
+				// x y
+				// a b -> x
+				// c d -> y
+				// e f -> 1
+				const g = this.canvas.width * d / det, h = this.canvas.height * c / det
+				const i = this.canvas.height * a / det, j = this.canvas.width * b / det
+				const k = (c * f - d * e) / det, l = (b * e - a * f) / det
+				const xmin = min(0, -h, g, g-h)+k, xmax = max(0, -h, g, g-h)+k
+				const ymin = min(0, -j, i, i-j)+l, ymax = max(0, -j, i, i-j)+l
+				return {xmin, xmax, ymin, ymax}
+			}
+			button(x0, y0, w, h){
+				if(this != ctx) return
+				if(clickHandled&1) return false
+				const {x, y} = this.from(mouse.x, mouse.y)
+				if(x<x0|x>x0+w|y<y0|y>y0+h) return false
+					mouse.cursor = 'pointer'
+				clickHandled |= 1
+				if(presses.pop(BUTTONS.L) || !previousButtons.has(BUTTONS.L)) return false
+				return true
+			}
+			surface(x0, y0, w, h){
+				if(this != ctx) return
+				const {x, y} = this.from(mouse.x, mouse.y)
+				if(x<x0|x>x0+w|y<y0|y>y0+h)
+					clickHandled |= 1
+			}
+			input(i, x0, y0, w, h, size = 32){
+				if(this != ctx) return
+				if(h<0)y0+=h,h=-h
+				if(w<0)x0+=w,w=-w
+				i.style.textAlign = this.textAlign
+				i.style.left = x0+'px'
+				i.style.marginBottom = y0+'px'
+				i.style.width = w+'px'
+				i.style.height = h+'px'
+				i.style.transform = `scale(${1/devicePixelRatio}) ${this.getTransform()} scaleY(-1)`
+				i.style.font = this.font
+				i.style.fontSize = size+'px'
+				if(!i.parentElement) document.documentElement.append(i)
+				toRem.add(i)
+				return document.activeElement === i
+			}
+			fillText(t, x, y, h=10, w = h, mW=1e100){
+				const T = 1000/w, S = -1000/h
+				this.scale(w*.001, h*-.001)
+				this._fillTxt(t, x*T, y*S, mW*T)
+				this.scale(T,S)
+			}
+			strokeText(t, x, y, h=10, w = h, mW=1e100){
+				const T = 1000/w, S = -1000/h
+				this.scale(w*.001, h*-.001)
+				this._strokeTxt(t, x*T, y*S, mW*T)
+				this.scale(T,S)
+			}
+			measureText(t, h = 1, w = h){
+				const {actualBoundingBoxLeft: left, actualBoundingBoxRight: right, actualBoundingBoxAscent: top, actualBoundingBoxDescent: bottom, width} = this._measureTxt(t)
+				return {left: left * w / 1000, right: right * w / 1000, top: top * h / 1000, bottom: bottom * h / 1000, width: width * w / 1000, height: (top + bottom) * h / 1000}
+			}
+			to(x, y){
+				const {a, b, c, d, e, f} = this.getTransform()
+				// x y 1
+				// a c e -> x
+				// b d f -> y
+				return {
+					x: (x * a + y * c + e)/px,
+					y: (this.canvas.height-(x * b + y * d + f))/px,
+				}
+			}
+			from(x, y){
+				x *= px; y = this.canvas.height-y*px
+				const {a, b, c, d, e, f} = this.getTransform()
+				const det = a * d - b * c
+				// x y
+				// a b -> x
+				// c d -> y
+				// e f -> 1
+				return {
+					x: x * d / det - y * c / det + (c * f - d * e) / det,
+					y: y * a / det - x * b / det + (b * e - a * f) / det,
+				}
+			}
+			at(a, b){ return this.from(a * this.canvas.width/px, b * this.canvas.height/px) }
+			pos(a, b){ const p = this.to(a, b); p.x *= px/this.canvas.width; p.y *= px/this.canvas.height; return p }
+			get width(){return this.canvas.width}
+			get height(){return this.canvas.height}
+			close(){
+				this.width = 0
+				// Clean-up code
+				this.transforms.length = 0
+			}
+		}.prototype))
+		let f = Object.getOwnPropertyDescriptor(CanvasRenderingContext2D.prototype, 'fillStyle')
+		const oldSetFill = f.set; f.set = function(i){if(i.img!==undefined){oldSetFill.call(this,i.img?i.pattern??=this.createPattern(i.img,''):'#0000');}else oldSetFill.call(this,i)}
+		Object.defineProperty(CanvasRenderingContext2D.prototype, 'fillStyle', f)
+		f = Object.getOwnPropertyDescriptor(CanvasRenderingContext2D.prototype, 'strokeStyle')
+		const oldSetStroke = f.set; f.set = function(i){if(i.img!==undefined){oldSetStroke.call(this,i.img?i.pattern??=this.createPattern(i.img,''):'#0000');}else oldSetStroke.call(this,i)}
+		Object.defineProperty(CanvasRenderingContext2D.prototype, 'strokeStyle', f)
+		globalThis.px = 1
+		const texCanvas = Can(0,0)
+		globalThis.ctx = Can(0,0)
+		ctx.canvas.id = 'canvas'
+		globalThis.actx = new AudioContext()
+		AudioNode.prototype.to = function(a){
+			a = a.destination || a
+			let n = this
+			while(n){
+				n.disconnect()
+				n.connect(a)
+				n = n.last
+			}
+			return a
+		}
+		AudioNode.prototype.cancel = function(){
+			let n = this
+			while(n){
+				n.stop(0)
+				n.disconnect()
+				n = n.last
+			}
+		}
+		AudioBufferSourceNode.prototype.then = function(sound, l, d, s, e){
+			if(this.willEndAt == Infinity){console.warn('Called .then() on a looping AudioBufferSourceNode, which can never end.'); return this}
+			let sn = sound(l, d + this.willEndAt - actx.currentTime, s, e)
+			sn.last = this
+			return sn
+		}
+		globalThis.Video = (src) => {
+			let v = document.createElement('video')
+			v.src = src
+			return new Promise((r, c) => {
+				v.oncanplaythrough = e => (r(v), v.oncanplaythrough = v.onerror = null)
+				v.onerror = e => (c('Failed to load video'), v.onerror = v.oncanplaythrough = null)
+				v.load()
+			})
+		}
+		const _player = buf => (loop = false, delay = 0, start = 0, end = NaN) => {
+			const source = actx.createBufferSource()
+			source.buffer = buf
+			source.connect(actx.destination)
+			source.loop = loop
+			const t = actx.currentTime
+			if(loop){
+				source.loopStart = start
+				if(end == end)source.loopEnd = end
+				source.start(t + delay, start)
+			}else{
+				source.start(t + delay, start)
+				if(end == end)source.stop(t + delay + end - start)
+			}
+			source.willEndAt = loop ? Infinity : t + (end == end ? end : source.buffer.duration) - start
+			return source
+		}
+		globalThis.Audio = src => {
+			return fetch(src).then(a => a.arrayBuffer()).then(a => new Promise((r, c) => actx.decodeAudioData(a, buf => {
+				if(!buf) c('Failed to parse audio')
+				r(_player(buf))
+			})))
+		}
+		function _fillaudio(lfn, rfn = lfn){
+			const {sampleRate, len} = this
+			for(let i = 0; i < len; i++) this.l[i] = lfn(i / sampleRate, this.l[i], i), this.r[i] = rfn(i / sampleRate, this.r[i], i)
+			return this
+		}
+		globalThis.Wave = (len, sampleRate = 44100) => {
+			const audio = new AudioBuffer({length: len * sampleRate, sampleRate, numberOfChannels: 2})
+			const pl = _player(audio)
+			pl.l = audio.getChannelData(0)
+			pl.r = audio.getChannelData(1)
+			pl.sampleRate = audio.sampleRate
+			pl.len = audio.length
+			pl.fill = _fillaudio
+			return pl
+		}
+		globalThis.previousButtons = new BitField
+		globalThis.buttons = new BitField
+		globalThis.presses = new BitField
+		document.addEventListener('mousedown', e => void buttons.set(e.button))
+		document.addEventListener('mouseup', e => void buttons.unset(e.button))
+		document.addEventListener('keydown', e => {
+			if(!document.activeElement && !e.repeat) buttons.set(e.keyCode)
+			if(!document.activeElement) e.preventDefault()
+		})
+		document.addEventListener('keyup', e => {
+			if(!document.activeElement) buttons.unset(e.keyCode)
+			else if(e.keyCode === 13){ document.activeElement.onenter?.() }
+		})
+		const isMac = navigator.platform.startsWith('Mac')
+		globalThis.BUTTONS = {L: 0, R: 2, M: 1}
+		globalThis.KEYS = {
+			A: 65, B: 66, C: 67, D: 68, E: 69, F: 70,
+			G: 71, H: 72, I: 73, J: 74, K: 75, L: 76,
+			M: 77, N: 78, O: 79, P: 80, Q: 81, R: 82,
+			S: 83, T: 84, U: 85, V: 86, W: 87, X: 88,
+			Y: 89, Z: 90, NUM0: 48, NUM1: 49, NUM2: 50, NUM3: 51,
+			NUM4: 52, NUM5: 53, NUM6: 54, NUM7: 55, NUM8: 56, NUM9: 57,
+			SPACE: 32, SYMBOL: isMac ? 192 : 223, TAB: 9, BACK: 8, SHIFT: 16,
+			CTRL: 17, ALT: 18, ESC: 27, META: 91, METARIGHT: 93,
+			CAPSLOCK: 20, UP: 38, RIGHT: 39, DOWN: 40, LEFT: 37, MOD: isMac ? 91 : 17,
+			F1: 112, F2: 113, F3: 114, F4: 115, F5: 116, F6: 117, F7: 118, F8: 119, F9: 120, F10: 121, F11: 122, F12: 123
+		}
+		document.addEventListener('contextmenu', e => e.preventDefault())
+		let lastRender = 0, usesOffset = false
+		globalThis.t = 0; globalThis.now = 0; globalThis.dt = 0; globalThis.fps = -1
+		globalThis.mouse = {x: 0, y: 0, dx: 0, dy: 0, wx: 0, wy: 0, cursor: 'default'}
+		globalThis.touch = {}
+		document.addEventListener('mousemove', e => {
+			if(e.offsetX || e.offsetY)usesOffset = true
+			//Accurate to true device pixel
+			const x = usesOffset ? e.offsetX : e.pageX - e.target.offsetLeft
+			const y = usesOffset ? e.offsetY : e.pageY - e.target.offsetTop
+			mouse.x = x; mouse.y = ctx.canvas.height/px-y
+			mouse.dx = e.movementX, mouse.dy = e.movementY
+		})
+		Object.defineProperty(Array.prototype, 'delete', {enumerable:false,value(a){
+			let i = 0, j = 0
+			for(; j < this.length; j++){
+				if(j > i)this[i] = this[j]
+				if(this[i] != a)i++
+			}
+			return this.length = i
+		}})
+		document.addEventListener('wheel', e => {
+			mouse.wx = e.deltaX * px; mouse.wy = e.deltaY * px
+			e.preventDefault()
+		}, {passive: false})
+		document.addEventListener('mousewheel', e => e.preventDefault(), {passive: false})
+		document.addEventListener('pointerlockchange', () => {
+
+		})
+	</script>
+	<script type="module">
+		import {icon, title, render} from './index.js'
+		let exception = null
+		const iconEl = document.getElementById('icon')
+		const get = (a, d) => {
+			const r = typeof a == 'function' ? a(d) : a
+			return r !== undefined ? r : d
+		}
+		let frameCount = 0
+		function draw(){
+			const d = devicePixelRatio
+			px = round(d)
+			//ctx.canvas.style.transform = 'scale('+1/px+')'
+			ctx.resize(round(visualViewport.width*visualViewport.scale * d), round(visualViewport.height*visualViewport.scale * d))
+			const tr = [...toRem]; toRem.clear()
+			ctx.reset()
+			ctx.frameNumber = frameCount++
+			mouse.cursor = 'default'
+			clickHandled = 0
+			presses = buttons.slice()
+			render.call(ctx, ctx.canvas.width/px, ctx.canvas.height/px)
+			previousButtons = buttons.slice()
+			document.title = title || '\u200b'
+			iconEl.href = (Array.isArray(icon) ? icon[0] : icon || 'data:image/webp;base64,UklGRkAAAABXRUJQVlA4WAoAAAAQAAAAAAAAAAAAQUxQSAIAAAAAAFZQOCAYAAAAMAEAnQEqAQABAAdAliWkAANwAP7vuQAA')
+			for(const e of tr) if(!toRem.has(e)) e.remove()
+			ctx.canvas.style.cursor = mouse.cursor
+			mouse.dx=mouse.dy=mouse.wx=mouse.wy=0
+		}
+		function frame(){
+			requestAnimationFrame(frame)
+			t = performance.now() / 1000
+			now = Date.now()/1000
+			const age = t - lastRender, s = 1 / fps
+			try{
+				if(s < 0 || !lastRender){
+					dt = min(0.1, age)
+					draw()
+					lastRender = t
+				}else if(age >= s){
+					dt = min(s*5, age - (age % s))
+					draw()
+					lastRender += age - (age % s)
+				}
+			}catch(e){ if(!exception)console.error('Error occurred while rendering canvas:\n%o', exception = e) }
+		}
+		function info(v){
+			switch(typeof v){
+				case "boolean": return v ? ' true' : 'false'
+				case "undefined": return ''
+				case "bigint": return n+''
+				case "number":
+				if(v === Infinity)return ' infinity'
+				if(v === -Infinity)return '-infinity'
+				if(v !== v)return '    (NaN)'
+				if(!v)return 1 / v < 0 ? '-0.000000' : '0.0000000'
+				let exp = floor(log10(abs(v)))
+				if(exp >= 9-(v<0))return (v/10**exp).toFixed(5 - (v<0) - (exp>=100) - (exp >= 10)) + 'e' + exp
+				else if(exp < -7 + (v<0))return (v/10**exp).toFixed(4 - (v<0) - (exp<=-100) - (exp <= -10)) + 'e' + exp
+				else return exp<0 ? v.toFixed(7 - (v<0)) : v.toPrecision(8 - (v<0))
+				case "string": return v
+				case "function": return info(v())
+				case "object":
+					if(!v)return 'null'
+					let tag = v[Symbol.toStringTag] || 'Obj'
+					return `<${tag}>`
+				case "symbol": return v.description || '()'
+				default: return '<unknown>'
+			}
+		}
+		frame()
+		document.body.replaceWith(ctx.canvas)
+	</script>
+</html>
