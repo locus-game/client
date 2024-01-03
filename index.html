@@ -240,12 +240,6 @@
 			peek(l = this.transforms.length-6){
 				this._setTransform(this.transforms[l+5], this.transforms[l+4], this.transforms[l+3], this.transforms[l+2], this.transforms[l+1], this.transforms[l])
 			}
-			scissor(x0, y0, w, h){
-				this.beginPath()
-				this.rect(x0, y0, w, h)
-				this.closePath()
-				this.clip()
-			}
 			coverBox(){
 				const {a, b, c, d, e, f} = this.getTransform()
 				const det = a * d - b * c
@@ -259,6 +253,12 @@
 				const xmin = min(0, -h, g, g-h)+k, xmax = max(0, -h, g, g-h)+k
 				const ymin = min(0, -j, i, i-j)+l, ymax = max(0, -j, i, i-j)+l
 				return {xmin, xmax, ymin, ymax}
+			}
+			scissor(x0, y0, w, h){
+				this.beginPath()
+				this.rect(x0, y0, w, h)
+				this.closePath()
+				this.clip()
 			}
 			button(x0, y0, w, h){
 				if(this != ctx) return
