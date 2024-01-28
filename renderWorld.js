@@ -104,15 +104,17 @@ export function render(){
 			}
 		})
 	}
-	me.ix = me.x, me.iy = me.y
 	for(const s of objects){
 		s.tick(dt)
 		place(s)
 		const mag = 10/(s.radius/cam.zoom)
-		if(!(abs(s.x-s.ix)<16)) s.ix = s.x
-		else s.ix += (s.x - s.ix) * dt*10
-		if(!(abs(s.y-s.iy)<16)) s.iy = s.y
-		else s.iy += (s.y - s.iy) * dt*10
+		if(s===me)s.ix = s.x, s.iy = s.y
+		else{
+			if(!(abs(s.x-s.ix)<16)) s.ix = s.x
+			else s.ix += (s.x - s.ix) * dt*10
+			if(!(abs(s.y-s.iy)<16)) s.iy = s.y
+			else s.iy += (s.y - s.iy) * dt*10
+		}
 		const rx = s.ix - cam.x, ry = s.iy - cam.y
 		if(ui != 3 && mag > 4){
 			this.translate(rx, ry)
